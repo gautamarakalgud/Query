@@ -1,0 +1,17 @@
+Pyner
+
+cd stanford-ner-2016-10-31
+jar -uf stanford-ner.jar classifiers/english.muc.7class.distsim.crf.ser.gz
+java -mx500m -cp stanford-ner.jar edu.stanford.nlp.ie.NERServer -port 2020 -loadClassifier classifiers/english.muc.7class.distsim.crf.ser.gz
+
+Usage:
+import ner
+tagger = ner.SocketNER(host='localhost', port=2020, output_format='slashTags')
+tagger.get_entities('University of California is located in California, United States')
+
+Stanford Parser
+
+Usage:
+from nltk.parse.stanford import StanfordParser
+parser=StanfordParser(model_path="edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz")
+print(list(parser.raw_parse("the quick brown fox jumps over the lazy dog")))
