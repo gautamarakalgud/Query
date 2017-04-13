@@ -3,6 +3,7 @@ from nltk.parse.stanford import StanfordParser
 from nltk.tokenize import sent_tokenize
 from nltk.stem import WordNetLemmatizer
 import itertools
+import language_check
 
 class Questions:
 	""" Class to generate questions """
@@ -12,7 +13,7 @@ class Questions:
 		self.sent_list = []
 		for line in lines:
 			self.sent_list.extend(sent_tokenize(line))
-		self.question_list = []
+		self.question_list = {}
 		self.ner_entities = []
 		self.parse_tree = parse_tree
 		self.wordnet_lemmatizer = WordNetLemmatizer()
@@ -27,19 +28,20 @@ class Questions:
 		parser=StanfordParser(model_path="edu/stanford/nlp/models/lexparser/englishPCFG.ser.gz")
 		self.parse_tree = parser.raw_parse_sents(self.sent_list)
 		self.parse_tree = [list(tree)[0] for tree in self.parse_tree]
-		# print(self.parse_tree)
 		print('Parse tree done!')
 
 	def date_time_simple(self):
+		self.question_list['DATE_TIME'] = []
 		for sent_entities in self.ner_entities:
 			if 'DATE' in self.ner_entities and len(sent_entities['DATE'])==1:
 				if 'TIME' in self.ner_entities and len(sent_entities['TIME']==1):
-						self.question_list.append('What happened at '+sent_entities['TIME'][0]+' on '+sent_entities['DATE'][0]+' with respect to '+sent_list[0]+'?')
+						self.question_list['DATE_TIME'].append('What happened at '+sent_entities['TIME'][0]+' on '+sent_entities['DATE'][0]+' with respect to '+sent_list[0]+'?')
 				else:
 						if len(sent_entities['DATE'].split()) == 4:
-							self.question_list.append('What happened on '+sent_entities['DATE']+' with respect to '+sent_list[0]+'?')
+							self.question_list['DATE_TIME'].append('What happened on '+sent_entities['DATE']+' with respect to '+sent_list[0]+'?')
 
 	def where_simple(self):
+		self.question_list['WHERE'] = []
 		for index, sent_entities in enumerate(self.ner_entities):
 			tree = self.parse_tree[index]
 			leaf_values = tree.leaves()
@@ -78,13 +80,14 @@ class Questions:
 								if len(quest.split()) <6 or len(quest.split()) > 15:
 									continue
 								if formed:
-									self.question_list.append('Where was '+quest+'?')
+									self.question_list['WHERE'].append('Where was '+quest+'?')
 								else:
-									self.question_list.append('Where did '+quest+'?')
+									self.question_list['WHERE'].append('Where did '+quest+'?')
 							except:
 								pass
 
 	def when_simple(self):
+		self.question_list['WHEN'] = []
 		for index, sent_entities in enumerate(self.ner_entities):
 			tree = self.parse_tree[index]
 			leaf_values = tree.leaves()
@@ -117,11 +120,12 @@ class Questions:
 							if len(quest.split()) <3 or len(quest.split()) > 15:
 								continue
 							if formed:
-								self.question_list.append('When was '+quest+'?')
+								self.question_list['WHEN'].append('When was '+quest+'?')
 							else:
-								self.question_list.append('When did '+quest+'?')
+								self.question_list['WHEN'].append('When did '+quest+'?')
 
 	def is_questions(self):
+		self.question_list['IS'] = []
 		for index,sent in enumerate(self.sent_list):
 			tree = self.parse_tree[index]
 			subtrees = list(tree.subtrees(filter=lambda x:x.label()=='S'))
@@ -142,10 +146,36 @@ class Questions:
 						quest = ' '.join(leaf_values)
 						if len(quest.split()) < 3 or len(quest.split()) > 13:
 							continue
-						self.question_list.append('Is '+quest+'?')
+						self.question_list['IS'].append('Is '+quest+'?')
+						break
+
+	def was_questions(self):
+		self.question_list['WAS'] = []
+		for index,sent in enumerate(self.sent_list):
+			tree = self.parse_tree[index]
+			subtrees = list(tree.subtrees(filter=lambda x:x.label()=='S'))
+			found=0
+
+			if 'was' in sent.split():
+				for subtree in reversed(subtrees):
+					if 'was' in subtree.leaves():
+						leaf_values = subtree.leaves()
+						del leaf_values[leaf_values.index('was')]
+						for tag in subtree.pos():
+							if tag[1] == 'PRP$' and found==0:
+								found = 1
+								leaf_values[leaf_values.index(tag[0])] = self.sent_list[0]+"'s"
+							if tag[1] == 'PRP' and found==0:
+								found=1
+								leaf_values[leaf_values.index(tag[0])] = self.sent_list[0]
+						quest = ' '.join(leaf_values)
+						if len(quest.split()) < 3 or len(quest.split()) > 13:
+							continue
+						self.question_list['WAS'].append('Was '+quest+'?')
 						break
 
 	def filler_questions(self):
+		self.question_list['MISC'] = []
 		entities = ['PERSON', 'ORGANISATION', 'LOCATION']
 		relationships = list(itertools.combinations(entities, 2))+[('PERSON', 'PERSON'), ('ORGANISATION', 'ORGANISATION')]
 		for index,sent_entities in enumerate(self.ner_entities):
@@ -153,9 +183,15 @@ class Questions:
 				if rel[0] in sent_entities and rel[1] in sent_entities:
 					if rel[0]==rel[1]:
 						try:
-							self.question_list.append('How are '+sent_entities[rel[0]][0]+' and '+sent_entities[rel[1]][1]+' related?')
+							self.question_list['MISC'].append('How are '+sent_entities[rel[0]][0]+' and '+sent_entities[rel[1]][1]+' related?')
 						except:
 							pass
 					else:
-						self.question_list.append('How are '+sent_entities[rel[0]][0]+' and '+sent_entities[rel[1]][0]+' related?')
+						self.question_list['MISC'].append('How are '+sent_entities[rel[0]][0]+' and '+sent_entities[rel[1]][0]+' related?')
 
+
+	def evaluate(self):
+		tool = language_check.LanguageTool('en-US')
+		for question_type in self.question_list:
+			scores = [len(tool.check(quest)) for quest in self.question_list[question_type]]
+			self.question_list[question_type] = [x for (y,x) in sorted(zip(scores,self.question_list[question_type]))]
